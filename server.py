@@ -5,7 +5,7 @@ import asyncio
 
 app = FastAPI()
 
-# QUAY TRỞ LẠI PROFILE MÁY TÍNH ĐƯỢC HỖ TRỢ
+# Dùng profile desktop mà chúng ta biết là được hỗ trợ
 session = AsyncSession(impersonate="chrome120")
 
 @app.get("/proxy")
@@ -16,38 +16,29 @@ async def proxy_request(request: Request):
     if not target_url:
         raise HTTPException(status_code=400, detail="Missing 'url' parameter")
 
-    # THAY ĐỔI TOÀN BỘ HEADER ĐỂ KHỚP VỚI TRÌNH DUYỆT CHROME 120 TRÊN WINDOWS
+    # Chỉ giữ lại 2 header thiết yếu nhất cho request gửi đi
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': referer or '',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
-        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'Sec-Ch-Ua-Mobile': '?0',  # Thay đổi quan trọng: ?0 cho biết đây là desktop
-        'Sec-Ch-Ua-Platform': '"Windows"',  # Thay đổi quan trọng: Đổi sang Windows
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
+        'Referer': referer
     }
 
     try:
+        print(f"Attempting to proxy URL: {target_url}")
         resp = await session.get(target_url, headers=headers, timeout=30, allow_redirects=True)
+        
+        print(f"Upstream response status: {resp.status_code}")
+        print(f"Upstream response content-type: {resp.headers.get('Content-Type')}")
+
         resp.raise_for_status()
 
-        response_headers = {
-            'Content-Type': resp.headers.get('Content-Type', 'application/octet-stream'),
-            'Content-Length': resp.headers.get('Content-Length'),
-        }
-        response_headers = {k: v for k, v in response_headers.items() if v is not None}
-
-        return StreamingResponse(resp.iter_content(chunk_size=8192), headers=response_headers)
+        # === THAY ĐỔI QUAN TRỌNG ===
+        # Trả về dữ liệu thô mà không đặt bất kỳ header nào.
+        # Trình phát sẽ phải tự xác định loại nội dung.
+        return StreamingResponse(resp.iter_content(chunk_size=8192))
+        # === KẾT THÚC THAY ĐỔI ===
 
     except Exception as e:
-        # Thêm print(e.response.text) để xem nội dung lỗi nếu có
-        print(f"Error proxying {target_url}: {e}")
+        print(f"Error during proxy for {target_url}: {e}")
         try:
             print(f"Response body from failed request: {e.response.text}")
         except:
