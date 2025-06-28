@@ -6,7 +6,8 @@ import asyncio
 app = FastAPI()
 
 # Đổi profile mạo danh sang phiên bản mới hơn
-session = AsyncSession(impersonate="chrome120")
+# Dòng mới
+session = AsyncSession(impersonate="chrome120_android")
 
 @app.get("/proxy")
 async def proxy_request(request: Request):
