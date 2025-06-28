@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
+# THAY ĐỔI: Import thêm 'Response' để trả về nội dung đầy đủ thay vì stream
+from fastapi.responses import StreamingResponse, Response
 from curl_cffi.requests import AsyncSession
 import asyncio
 
@@ -26,38 +27,35 @@ async def proxy_request(request: Request):
         print(f"--> PROXYING: {target_url}")
         resp = await session.get(target_url, headers=headers, timeout=30, allow_redirects=True)
         
-        # In log để debug
         print(f"<-- RESPONSE: Status={resp.status_code}, Content-Type={resp.headers.get('Content-Type')}")
 
-        # Nếu server đích trả về lỗi, chúng ta cũng trả về lỗi đó
         resp.raise_for_status()
 
-        # === THAY ĐỔI QUAN TRỌNG: SAO CHÉP HEADER GỐC ===
-        # Loại bỏ các "hop-by-hop header" không nên được chuyển tiếp bởi proxy.
-        excluded_headers = [
-            'content-encoding', 
-            'transfer-encoding', 
-            'connection', 
-            'content-length' # Sẽ được xử lý tự động bởi StreamingResponse
-        ]
+        # === THAY ĐỔI LỚN: TẢI TOÀN BỘ NỘI DUNG VÀO BỘ NHỚ ===
+        # Thay vì resp.iter_content(), chúng ta dùng resp.content
+        # để lấy toàn bộ nội dung của segment.
+        final_content = resp.content
         
-        # Sao chép tất cả các header còn lại từ phản hồi gốc.
-        # Điều này đảm bảo Content-Type, Content-Disposition (nếu có), etc. được giữ nguyên.
+        # Lấy kích thước chính xác của nội dung đã tải về.
+        final_content_length = len(final_content)
+
+        # Sao chép các header quan trọng từ phản hồi gốc.
         response_headers = {
-            key: value for key, value in resp.headers.items() if key.lower() not in excluded_headers
+            'Content-Type': resp.headers.get('Content-Type', 'application/octet-stream'),
+            # Đặt Content-Length với kích thước chính xác của nội dung đã giải nén.
+            'Content-Length': str(final_content_length) 
         }
-        
-        # Trả về StreamingResponse với NỘI DUNG, MÃ TRẠNG THÁI, và HEADER gốc.
-        return StreamingResponse(
-            resp.iter_content(chunk_size=8192), 
-            status_code=resp.status_code, 
+
+        # Dùng 'Response' thay vì 'StreamingResponse' để gửi toàn bộ nội dung cùng lúc.
+        return Response(
+            content=final_content,
+            status_code=resp.status_code,
             headers=response_headers
         )
         # === KẾT THÚC THAY ĐỔI ===
 
     except Exception as e:
         print(f"[ERROR] Proxy for {target_url} failed: {e}")
-        # Cố gắng in ra nội dung lỗi từ server đích nếu có
         try:
             print(f"[ERROR BODY] {e.response.text}")
         except:
